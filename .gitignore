@@ -1,0 +1,26 @@
+# Build outputs
+build/
+build-*/
+cmake-build-*/
+out/
+compile_commands.json
+
+# Third-party downloads
+third_party/
+
+# Generated
+client/generated/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# TensorRT engine caches and large benchmark models
+*.engine
+*.plan
+models/sample/mlp_large.onnx
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
