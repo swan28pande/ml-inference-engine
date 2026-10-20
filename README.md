@@ -288,3 +288,7 @@ CI (GitHub Actions) builds and tests these configurations:
 
 C++17 · CUDA · TensorRT · ONNX Runtime · LibTorch (optional) · gRPC · Protobuf · CMake ·
 GoogleTest · Docker · GitHub Actions · Python (client)
+
+## License
+
+MIT. See [LICENSE](LICENSE).
