@@ -27,9 +27,17 @@ class LogMessage {
   std::ostringstream stream_;
 };
 
+// Lets MIE_LOG expand to a single expression (ternary), so it is safe inside
+// an unbraced if/else.
+class LogMessageVoidify {
+ public:
+  void operator&(std::ostream&) {}
+};
+
 }  // namespace mie
 
-#define MIE_LOG(level)                                                  \
-  if (::mie::LogLevel::level < ::mie::GetLogLevel()) {                  \
-  } else                                                                \
-    ::mie::LogMessage(::mie::LogLevel::level, __FILE__, __LINE__).stream()
+#define MIE_LOG(level)                                    \
+  (::mie::LogLevel::level < ::mie::GetLogLevel())         \
+      ? (void)0                                           \
+      : ::mie::LogMessageVoidify() &                      \
+            ::mie::LogMessage(::mie::LogLevel::level, __FILE__, __LINE__).stream()

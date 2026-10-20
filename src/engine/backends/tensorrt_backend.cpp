@@ -109,7 +109,19 @@ Status TensorRTBackend::BuildEngineFromOnnx(const ModelConfig& config, std::vect
   std::unique_ptr<IBuilderConfig> builder_config(builder->createBuilderConfig());
   builder_config->setMemoryPoolLimit(MemoryPoolType::kWORKSPACE,
                                      static_cast<size_t>(config.GetIntParameter("workspace_bytes", int64_t{1} << 30)));
-  if (config.GetBoolParameter("fp16", true)) builder_config->setFlag(BuilderFlag::kFP16);
+  if (config.GetBoolParameter("fp16", true)) {
+    // kFP16 is deprecated in newer TensorRT 10 releases in favour of strongly
+    // typed networks, but it is still the way to let the builder pick FP16
+    // kernels for an FP32 ONNX model.
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+    builder_config->setFlag(BuilderFlag::kFP16);
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+  }
 
   const int64_t max_batch = config.GetIntParameter("max_batch", std::max(1, config.batching.max_batch_size));
   const int64_t opt_batch = config.GetIntParameter("opt_batch", max_batch);
