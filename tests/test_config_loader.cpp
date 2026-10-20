@@ -58,7 +58,9 @@ TEST(ConfigLoaderTest, ShippedConfigsParse) {
   for (const char* name : {"server.pbtxt", "server.reference.pbtxt", "server.gpu.pbtxt"}) {
     auto opts = LoadServerConfig(std::string(MIE_TEST_CONFIGS_DIR) + "/" + name);
     EXPECT_TRUE(opts.ok()) << name << ": " << opts.status().ToString();
-    if (opts.ok()) EXPECT_FALSE(opts->models.empty()) << name;
+    if (opts.ok()) {
+      EXPECT_FALSE(opts->models.empty()) << name;
+    }
   }
 }
 

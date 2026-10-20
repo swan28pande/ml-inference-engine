@@ -125,22 +125,24 @@ jobs:
           wget -q https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
           sudo dpkg -i cuda-keyring_1.1-1_all.deb
           sudo apt-get update
+          # Newest TensorRT 10 build for CUDA 12.x, then the matching CUDA toolkit.
+          TRT_VERSION=$(apt-cache madison libnvinfer-dev | awk '{print $3}' | grep -E '^10\..*\+cuda12' | sort -V | tail -1)
+          CUDA_VER=$(echo "$TRT_VERSION" | sed -E 's/.*\+cuda([0-9]+)\.([0-9]+).*/\1-\2/')
+          echo "TensorRT ${TRT_VERSION}, CUDA ${CUDA_VER}"
           sudo apt-get install -y --no-install-recommends \
             build-essential cmake ninja-build pkg-config \
             libgrpc++-dev libprotobuf-dev protobuf-compiler protobuf-compiler-grpc libgtest-dev \
-            cuda-nvcc-12-8 cuda-cudart-dev-12-8 cuda-nvml-dev-12-8
-          # Pick the newest TensorRT 10 build that targets CUDA 12.x.
-          TRT_VERSION=$(apt-cache madison libnvinfer-dev | awk '{print $3}' | grep -E '^10\..*\+cuda12' | sort -V | tail -1)
-          echo "Installing TensorRT ${TRT_VERSION}"
-          sudo apt-get install -y --no-install-recommends \
+            "cuda-nvcc-${CUDA_VER}" "cuda-cudart-dev-${CUDA_VER}" "cuda-nvml-dev-${CUDA_VER}" \
             "libnvinfer-dev=${TRT_VERSION}" "libnvinfer-headers-dev=${TRT_VERSION}" "libnvinfer10=${TRT_VERSION}" \
             "libnvonnxparsers-dev=${TRT_VERSION}" "libnvonnxparsers10=${TRT_VERSION}"
-          echo "/usr/local/cuda-12.8/bin" >> "$GITHUB_PATH"
+          CUDA_HOME="/usr/local/cuda-${CUDA_VER/-/.}"
+          echo "CUDA_HOME=${CUDA_HOME}" >> "$GITHUB_ENV"
+          echo "${CUDA_HOME}/bin" >> "$GITHUB_PATH"
 
       - name: Configure
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_CUDA_COMPILER=/usr/local/cuda-12.8/bin/nvcc \
+            -DCMAKE_CUDA_COMPILER=${CUDA_HOME}/bin/nvcc -DCUDAToolkit_ROOT=${CUDA_HOME} \
             -DMIE_WITH_CUDA=ON -DMIE_WITH_TENSORRT=ON -DMIE_WITH_NVML=ON \
             -DMIE_WITH_ONNXRUNTIME=OFF -DMIE_CUDA_ARCHITECTURES="80;89" \
             -DMIE_WARNINGS_AS_ERRORS=ON
