@@ -1,0 +1,56 @@
+# GPU deployment (requires a build with -DMIE_WITH_CUDA=ON -DMIE_WITH_TENSORRT=ON).
+#   v1: native TensorRT backend; the ONNX model is compiled into an FP16 engine
+#       on first start and cached next to the model.
+#   v2: ONNX Runtime with the TensorRT execution provider (CUDA fallback).
+listen_address: "0.0.0.0:50051"
+max_concurrent_requests: 16384
+drain_timeout_ms: 15000
+
+device_memory_pool {
+  max_cached_bytes: 2147483648      # 2 GiB of idle blocks kept for reuse
+  min_block_bytes: 1024
+  max_block_bytes: 268435456
+  preallocate { bytes: 65536 count: 64 }
+  preallocate { bytes: 1048576 count: 16 }
+}
+
+models {
+  name: "mlp"
+  version: "1"
+  backend: "tensorrt"
+  path: "../models/sample/mlp_v1.onnx"
+  use_gpu: true
+  device_id: 0
+  instance_count: 2
+  warmup_iterations: 20
+  batching {
+    max_batch_size: 128
+    max_queue_delay_us: 300
+    preferred_batch_sizes: [32, 64, 128]
+    max_queue_size: 16384
+  }
+  parameters { key: "fp16" value: "1" }
+  parameters { key: "opt_batch" value: "64" }
+}
+
+models {
+  name: "mlp"
+  version: "2"
+  backend: "onnxruntime"
+  path: "../models/sample/mlp_v2.onnx"
+  use_gpu: true
+  instance_count: 2
+  warmup_iterations: 20
+  batching {
+    max_batch_size: 128
+    max_queue_delay_us: 300
+  }
+  parameters { key: "execution_provider" value: "tensorrt" }
+  parameters { key: "trt_fp16" value: "1" }
+}
+
+traffic {
+  model_name: "mlp"
+  weights { key: "1" value: 50 }
+  weights { key: "2" value: 50 }
+}

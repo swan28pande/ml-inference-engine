@@ -1,0 +1,40 @@
+# CPU deployment: two versions of the sample MLP served by ONNX Runtime with a
+# 90/10 A/B split. Paths are relative to this file.
+listen_address: "0.0.0.0:50051"
+max_concurrent_requests: 8192
+drain_timeout_ms: 10000
+
+models {
+  name: "mlp"
+  version: "1"
+  backend: "onnxruntime"
+  path: "../models/sample/mlp_v1.onnx"
+  instance_count: 2
+  warmup_iterations: 10
+  batching {
+    max_batch_size: 64
+    max_queue_delay_us: 500
+    max_queue_size: 8192
+  }
+  parameters { key: "intra_op_threads" value: "1" }
+}
+
+models {
+  name: "mlp"
+  version: "2"
+  backend: "onnxruntime"
+  path: "../models/sample/mlp_v2.onnx"
+  instance_count: 2
+  warmup_iterations: 10
+  batching {
+    max_batch_size: 64
+    max_queue_delay_us: 500
+    max_queue_size: 8192
+  }
+}
+
+traffic {
+  model_name: "mlp"
+  weights { key: "1" value: 90 }
+  weights { key: "2" value: 10 }
+}

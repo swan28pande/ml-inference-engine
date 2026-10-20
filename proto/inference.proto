@@ -1,0 +1,199 @@
+// Public inference API served by mie_server.
+//
+//   Predict           - run inference on a model (optionally pinned to a version)
+//   Health            - liveness/readiness, per-model state and GPU utilization
+//   GetModelMetadata  - input/output signatures of a loaded model version
+//   ListModels        - all loaded models, versions and traffic splits
+//   SetTrafficSplit   - update A/B weights between versions of a model at runtime
+//   GetMetrics        - latency percentiles / throughput per model version
+syntax = "proto3";
+
+package mie.v1;
+
+option cc_enable_arenas = true;
+
+service InferenceService {
+  rpc Predict(PredictRequest) returns (PredictResponse);
+  rpc Health(HealthRequest) returns (HealthResponse);
+  rpc GetModelMetadata(ModelMetadataRequest) returns (ModelMetadataResponse);
+  rpc ListModels(ListModelsRequest) returns (ListModelsResponse);
+  rpc SetTrafficSplit(SetTrafficSplitRequest) returns (SetTrafficSplitResponse);
+  rpc GetMetrics(MetricsRequest) returns (MetricsResponse);
+}
+
+// ----------------------------------------------------------------- tensors
+
+enum DataType {
+  DT_INVALID = 0;
+  DT_FLOAT32 = 1;
+  DT_FLOAT16 = 2;
+  DT_INT64 = 3;
+  DT_INT32 = 4;
+  DT_UINT8 = 5;
+  DT_BOOL = 6;
+}
+
+// Dense tensor. raw_data holds the row-major little-endian element bytes.
+// The first dimension is the batch dimension.
+message Tensor {
+  string name = 1;
+  DataType dtype = 2;
+  repeated int64 shape = 3;
+  bytes raw_data = 4;
+}
+
+message TensorSpec {
+  string name = 1;
+  DataType dtype = 2;
+  repeated int64 shape = 3;  // -1 marks a dynamic dimension
+}
+
+// ----------------------------------------------------------------- predict
+
+message PredictRequest {
+  string model_name = 1;
+  // Pin a specific version. Empty = let the traffic router choose.
+  string model_version = 2;
+  // Optional sticky routing key (e.g. user id). Requests with the same key are
+  // consistently routed to the same version under an A/B split.
+  string routing_key = 3;
+  repeated Tensor inputs = 4;
+  // Restrict returned outputs. Empty = all outputs.
+  repeated string output_filter = 5;
+}
+
+message InferenceTiming {
+  int64 queue_us = 1;      // time spent waiting in the batch queue
+  int64 compute_us = 2;    // backend execution time of the batch
+  int64 total_us = 3;      // server-side end-to-end latency
+  int32 batch_size = 4;    // number of samples in the executed batch
+}
+
+message PredictResponse {
+  string model_name = 1;
+  string model_version = 2;
+  repeated Tensor outputs = 3;
+  InferenceTiming timing = 4;
+}
+
+// ------------------------------------------------------------------ health
+
+enum ServingStatus {
+  SERVING_STATUS_UNKNOWN = 0;
+  SERVING = 1;
+  NOT_SERVING = 2;
+  DRAINING = 3;
+}
+
+enum ModelState {
+  MODEL_STATE_UNKNOWN = 0;
+  LOADING = 1;
+  READY = 2;
+  UNLOADING = 3;
+  FAILED = 4;
+}
+
+message GpuInfo {
+  int32 device_id = 1;
+  string name = 2;
+  double utilization_percent = 3;  // -1 when unavailable
+  uint64 memory_used_bytes = 4;
+  uint64 memory_total_bytes = 5;
+}
+
+message ModelStatus {
+  string model_name = 1;
+  string version = 2;
+  ModelState state = 3;
+  string backend = 4;
+  uint64 queue_depth = 5;
+  string message = 6;
+}
+
+message HealthRequest {}
+
+message HealthResponse {
+  ServingStatus status = 1;
+  repeated ModelStatus models = 2;
+  repeated GpuInfo gpus = 3;
+  int64 uptime_seconds = 4;
+  uint64 in_flight_requests = 5;
+  string server_version = 6;
+}
+
+// ---------------------------------------------------------------- metadata
+
+message ModelMetadataRequest {
+  string model_name = 1;
+  string model_version = 2;  // empty = default (latest) version
+}
+
+message ModelMetadataResponse {
+  string model_name = 1;
+  string version = 2;
+  string backend = 3;
+  string platform = 4;
+  int32 max_batch_size = 5;
+  repeated TensorSpec inputs = 6;
+  repeated TensorSpec outputs = 7;
+  map<string, string> properties = 8;
+}
+
+message ListModelsRequest {}
+
+message ModelInfo {
+  string model_name = 1;
+  repeated ModelStatus versions = 2;
+  map<string, uint32> traffic_weights = 3;
+}
+
+message ListModelsResponse {
+  repeated ModelInfo models = 1;
+}
+
+// ----------------------------------------------------------------- routing
+
+message SetTrafficSplitRequest {
+  string model_name = 1;
+  // version -> relative weight. Empty map clears the split (all traffic goes
+  // to the latest version).
+  map<string, uint32> weights = 2;
+}
+
+message SetTrafficSplitResponse {
+  map<string, uint32> weights = 1;
+}
+
+// ----------------------------------------------------------------- metrics
+
+message MetricsRequest {
+  string model_name = 1;  // empty = all models
+  bool prometheus_format = 2;
+}
+
+message LatencySummary {
+  uint64 count = 1;
+  double mean_us = 2;
+  double p50_us = 3;
+  double p95_us = 4;
+  double p99_us = 5;
+  double max_us = 6;
+}
+
+message ModelMetrics {
+  string model_name = 1;
+  string version = 2;
+  uint64 requests_ok = 3;
+  uint64 requests_failed = 4;
+  uint64 requests_rejected = 5;
+  double throughput_rps = 6;  // over the last 10 seconds
+  double mean_batch_size = 7;
+  LatencySummary request_latency = 8;
+  LatencySummary queue_latency = 9;
+  LatencySummary compute_latency = 10;
+}
+
+message MetricsResponse {
+  repeated ModelMetrics models = 1;
+  string prometheus_text = 2;
+}

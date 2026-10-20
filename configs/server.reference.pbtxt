@@ -1,0 +1,22 @@
+# Dependency-free configuration using the built-in reference backend. The
+# reference model simulates an accelerator cost model (fixed per-batch
+# overhead + per-sample cost) so batching behaviour can be observed on any
+# machine. Useful for CI and builds without ONNX Runtime.
+listen_address: "0.0.0.0:50051"
+max_concurrent_requests: 8192
+drain_timeout_ms: 5000
+
+models {
+  name: "reference"
+  version: "1"
+  backend: "reference"
+  instance_count: 2
+  batching {
+    max_batch_size: 32
+    max_queue_delay_us: 1000
+  }
+  parameters { key: "input_dim" value: "16" }
+  parameters { key: "output_dim" value: "4" }
+  parameters { key: "fixed_latency_us" value: "500" }
+  parameters { key: "per_sample_latency_us" value: "10" }
+}

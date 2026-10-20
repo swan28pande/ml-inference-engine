@@ -1,0 +1,60 @@
+// Server configuration, written in protobuf text format (see configs/*.pbtxt).
+syntax = "proto3";
+
+package mie.config;
+
+message BatchingConfig {
+  bool disabled = 1;                  // batching is on by default
+  int32 max_batch_size = 2;           // max samples per executed batch
+  int64 max_queue_delay_us = 3;       // max time the oldest request waits for a batch to fill
+  repeated int32 preferred_batch_sizes = 4;
+  uint32 max_queue_size = 5;          // pending requests before RESOURCE_EXHAUSTED
+}
+
+message TensorSpecConfig {
+  string name = 1;
+  string dtype = 2;                   // float32, float16, int64, int32, uint8, bool
+  repeated int64 shape = 3;
+}
+
+message ModelConfig {
+  string name = 1;
+  string version = 2;
+  string backend = 3;                 // onnxruntime | tensorrt | torchscript | reference
+  string path = 4;                    // model file, relative to the config file
+  uint32 instance_count = 5;          // parallel execution instances (worker threads)
+  BatchingConfig batching = 6;
+  bool use_gpu = 7;
+  int32 device_id = 8;
+  map<string, string> parameters = 9; // backend-specific settings
+  repeated TensorSpecConfig inputs = 10;
+  repeated TensorSpecConfig outputs = 11;
+  uint32 warmup_iterations = 12;
+}
+
+message TrafficSplitConfig {
+  string model_name = 1;
+  map<string, uint32> weights = 2;
+}
+
+message MemoryPoolConfig {
+  uint64 max_cached_bytes = 1;
+  uint64 min_block_bytes = 2;
+  uint64 max_block_bytes = 3;
+  // Blocks to pre-allocate at startup, e.g. {bytes: 1048576 count: 32}
+  repeated Preallocation preallocate = 4;
+  message Preallocation {
+    uint64 bytes = 1;
+    uint32 count = 2;
+  }
+}
+
+message ServerConfig {
+  string listen_address = 1;          // e.g. 0.0.0.0:50051
+  uint32 max_concurrent_requests = 2; // global in-flight limit
+  uint32 drain_timeout_ms = 3;        // graceful shutdown budget
+  uint32 max_message_bytes = 4;
+  MemoryPoolConfig device_memory_pool = 5;
+  repeated ModelConfig models = 6;
+  repeated TrafficSplitConfig traffic = 7;
+}
