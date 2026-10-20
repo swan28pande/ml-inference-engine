@@ -134,6 +134,7 @@ jobs:
             libgrpc++-dev libprotobuf-dev protobuf-compiler protobuf-compiler-grpc libgtest-dev \
             "cuda-nvcc-${CUDA_VER}" "cuda-cudart-dev-${CUDA_VER}" "cuda-nvml-dev-${CUDA_VER}" \
             "libnvinfer-dev=${TRT_VERSION}" "libnvinfer-headers-dev=${TRT_VERSION}" "libnvinfer10=${TRT_VERSION}" \
+            "libnvinfer-safe-headers-dev=${TRT_VERSION}" \
             "libnvonnxparsers-dev=${TRT_VERSION}" "libnvonnxparsers10=${TRT_VERSION}"
           CUDA_HOME="/usr/local/cuda-${CUDA_VER/-/.}"
           echo "CUDA_HOME=${CUDA_HOME}" >> "$GITHUB_ENV"
