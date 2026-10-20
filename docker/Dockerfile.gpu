@@ -1,0 +1,61 @@
+# syntax=docker/dockerfile:1.6
+#
+# GPU image: CUDA + TensorRT + ONNX Runtime (CUDA/TensorRT execution providers).
+#   docker build -f docker/Dockerfile.gpu -t mie-server:gpu .
+#   docker run --rm --gpus all -p 50051:50051 mie-server:gpu
+#
+# Base image ships CUDA 12.x, cuDNN and TensorRT 10.x on Ubuntu 24.04.
+ARG TRT_IMAGE=nvcr.io/nvidia/tensorrt:25.01-py3
+ARG ORT_VERSION=1.22.0
+
+FROM ${TRT_IMAGE} AS build
+ARG ORT_VERSION
+ARG CUDA_ARCHS="75;80;86;89;90"
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      cmake ninja-build pkg-config git curl ca-certificates \
+      libgrpc++-dev libprotobuf-dev protobuf-compiler protobuf-compiler-grpc libgtest-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY scripts/fetch_onnxruntime.sh scripts/
+RUN ORT_VERSION=${ORT_VERSION} DEST=/opt/onnxruntime scripts/fetch_onnxruntime.sh --gpu
+
+COPY . .
+RUN cmake -S . -B build -G Ninja \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DONNXRUNTIME_ROOT=/opt/onnxruntime \
+      -DMIE_WITH_CUDA=ON -DMIE_WITH_TENSORRT=ON -DMIE_WITH_NVML=ON \
+      -DMIE_CUDA_ARCHITECTURES="${CUDA_ARCHS}" \
+      -DMIE_BUILD_TESTS=ON -DMIE_BUILD_BENCHMARKS=ON \
+    && cmake --build build --parallel
+
+# Collect gRPC / protobuf / abseil shared libraries; CUDA, cuDNN and TensorRT
+# come from the runtime base image itself.
+RUN mkdir -p /out/bin /out/lib \
+    && cp build/src/mie_server build/src/mie_health_probe build/benchmarks/mie_loadgen \
+          build/benchmarks/mie_engine_benchmark build/tests/mie_tests /out/bin/ \
+    && for b in /out/bin/*; do \
+         LD_LIBRARY_PATH=/opt/onnxruntime/lib ldd "$b" | awk '/=> \// {print $3}' ; \
+       done | sort -u \
+       | grep -E '/(libgrpc|libgpr|libprotobuf|libabsl|libaddress_sorting|libupb|libre2|libcares|libssl|libcrypto|libz)' \
+       | xargs -r -I{} cp -Ln {} /out/lib/
+
+# The runtime reuses the TensorRT base image so libnvinfer/cudart/cudnn match
+# the versions the binary was built against.
+FROM ${TRT_IMAGE} AS runtime
+COPY --from=build /out/bin/ /usr/local/bin/
+COPY --from=build /out/lib/ /usr/local/lib/mie/
+COPY --from=build /opt/onnxruntime/lib/ /opt/onnxruntime/lib/
+COPY configs/ /opt/mie/configs/
+COPY models/sample/ /opt/mie/models/sample/
+ENV LD_LIBRARY_PATH=/opt/onnxruntime/lib:/usr/local/lib/mie:${LD_LIBRARY_PATH}
+
+WORKDIR /opt/mie
+EXPOSE 50051
+HEALTHCHECK --interval=10s --timeout=3s --start-period=120s --retries=3 \
+  CMD ["mie_health_probe", "--address", "localhost:50051"]
+STOPSIGNAL SIGTERM
+ENTRYPOINT ["mie_server"]
+CMD ["--config", "/opt/mie/configs/server.gpu.pbtxt"]

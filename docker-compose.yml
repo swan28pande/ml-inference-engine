@@ -1,0 +1,59 @@
+# docker compose up --build
+#   inference-server : mie_server (CPU, ONNX Runtime) on :50051
+#   client           : Python client running a health/predict/load/metrics demo
+#
+# GPU variant:  docker compose --profile gpu up --build inference-server-gpu
+services:
+  inference-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mie-server:latest
+    ports:
+      - "50051:50051"
+    command: ["--config", "/opt/mie/configs/server.pbtxt", "--log_level", "info"]
+    stop_grace_period: 20s   # > drain_timeout_ms so in-flight requests finish
+    healthcheck:
+      test: ["CMD", "mie_health_probe", "--address", "localhost:50051"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 2g
+
+  client:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+    environment:
+      MIE_SERVER: inference-server:50051
+    command: ["demo", "--model", "mlp", "--concurrency", "16", "--duration", "5"]
+    depends_on:
+      inference-server:
+        condition: service_healthy
+
+  inference-server-gpu:
+    profiles: ["gpu"]
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.gpu
+    image: mie-server:gpu
+    ports:
+      - "50051:50051"
+    volumes:
+      - trt-engine-cache:/opt/mie/models/sample   # persist compiled TensorRT engines
+    stop_grace_period: 30s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+volumes:
+  trt-engine-cache:

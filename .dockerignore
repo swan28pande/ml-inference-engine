@@ -1,0 +1,8 @@
+build/
+build-*/
+cmake-build-*/
+third_party/
+client/generated/
+**/__pycache__/
+.git/
+*.engine
